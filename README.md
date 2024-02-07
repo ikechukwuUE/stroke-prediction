@@ -14,7 +14,7 @@ The dataset used for this project consists of various features related to patien
 
 ## Modeling and Evaluation
 
-A Random Forest ensemble model was developed and evaluated using several metrics, including accuracy, precision, recall, and F1 score. The model achieved exceptional performance, indicating its potential for clinical use.
+A Random Forest ensemble model was developed and evaluated using several metrics, including accuracy, recall, and auc score. The model achieved exceptional performance, indicating its potential for clinical use.
 
 ## Feature Importance
 
