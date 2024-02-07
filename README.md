@@ -22,7 +22,7 @@ The model identified key factors contributing to stroke risk, such as age, work 
 
 ## Conclusion
 
-The predictive model developed in this project effectively classifies patients at risk of stroke. This model can automate the initial stages of the claims process, thereby increasing response time and improving overall system efficiency. Future steps to expand on this project could include refining the model to handle more complex scenarios or integrating it into a broader content moderation system.
+The predictive model developed in this project effectively classifies patients at risk of stroke. This model can automate the initial stages of screening patients at high risk of stroke, thereby decreasing overall morbidity and mortality. Future steps to expand on this project could include refining the model to handle more complex scenarios or integrating it into a broader content moderation system.
 
 To get started with this project, clone the repository and follow the instructions in the `README.md` file.
 
