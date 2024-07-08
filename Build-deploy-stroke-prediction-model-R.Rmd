@@ -1,0 +1,336 @@
+---
+title: "Build and deploy a stroke prediction model using R"
+author: "Ikechukwu Ugbo"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+---
+
+# About Data Analysis Report
+
+This RMarkdown file contains the report of the data analysis done for the project on building and deploying a stroke prediction model in R. It contains analysis such as data exploration, summary statistics and building the prediction models. The final report was completed on `r date()`. 
+
+**Data Description:**
+
+According to the World Health Organization (WHO) stroke is the 2nd leading cause of death globally, responsible for approximately 11% of total deaths.
+
+This data set is used to predict whether a patient is likely to get stroke based on the input parameters like gender, age, various diseases, and smoking status. Each row in the data provides relevant information about the patient.
+
+
+# Task One: Import data and data preprocessing
+
+## Data preparation
+
+Handling Missing Data and Outliers:
+
+Reassigned the single data point with an unknown gender to 'female'.
+Excluded individuals below 18 years old from the analysis, as per pediatrician treatment guidelines.
+Reassigned the two individuals who reported never working to 'private', the most common occupation category.
+Removed records with 'N/A' in the BMI column.
+Confirmed that there are no duplicate IDs, ensuring each observation is unique.
+Identified and reassigned two outliers in the average glucose level to the 90th percentile.
+After these cleanup processes, the dataset contains 4014 observations.
+
+
+## Load data and install packages
+
+```{r}
+library(tidymodels)
+library(tidyverse)
+library(workflows)
+library(tune)
+library(caret)
+library(ranger)
+library(plumber)
+```
+
+
+## Describe and explore the data
+
+```{r}
+stroke_pred <- read.csv("data/stroke-prediction-dataset.csv")
+ggplot(stroke_pred) +
+  geom_histogram(aes(x= avg_glucose_level))
+ggplot(stroke_pred) +
+  geom_histogram(aes(x = bmi))
+```
+```{r}
+stroke_df <- stroke_pred
+# Telling R to treat the variables as categorical variables;
+
+stroke_df$gender <- as.factor(stroke_pred$gender)
+stroke_df$hypertension <- as.factor(stroke_pred$hypertension)
+stroke_df$heart_disease <- as.factor(stroke_pred$heart_disease)
+stroke_df$ever_married <- as.factor(stroke_pred$ever_married)
+stroke_df$work_type <- as.factor(stroke_pred$work_type)
+stroke_df$Residence_type <- as.factor(stroke_pred$Residence_type)
+stroke_df$smoking_status <- as.factor(stroke_pred$smoking_status)
+stroke_df$stroke <- as.factor(stroke_pred$stroke)
+```
+
+
+```{r}
+# upsampling the minority class;
+set.seed(42)
+upsampled_data <- upSample(x = stroke_df[,-which(colnames(stroke_df) %in% "stroke")],
+                            y = stroke_df$stroke)
+
+# Check the distribution of the upsampled class
+upsampled_data$stroke <- upsampled_data$Class
+
+table(upsampled_data$stroke)
+```
+
+
+# Task Two: Build prediction models
+
+```{r}
+# Splitting the model into training and testing dataset.
+set.seed(42)
+
+# split the data into training (75%) and testing (25%)
+stroke_split <- initial_split(upsampled_data, prop = 0.75)
+
+train_data <- training(stroke_split)
+test_data <- testing(stroke_split)
+```
+
+```{r}
+# define the recipe
+stroke_recipe <- 
+  # which consists of the formula (outcome ~ predictors)
+  recipe(stroke ~ gender + age + hypertension + heart_disease + ever_married + work_type + avg_glucose_level + bmi + smoking_status + Residence_type, 
+         data = upsampled_data) %>%
+  # and some pre-processing steps
+  step_normalize(all_numeric()) %>%
+  step_impute_knn(all_predictors())
+```
+
+```{r}
+stroke_recipe
+```
+```{r}
+stroke_train_preprocessed <- stroke_recipe %>%
+  # apply the recipe to the training data
+  prep(train_data) %>%
+  # extract the pre-processed training dataset
+  juice()
+stroke_train_preprocessed
+```
+
+```{r}
+# creating a cross validation object
+stroke_cv <- vfold_cv(stroke_train_preprocessed, v = 4)
+```
+
+```{r}
+rf_model <- 
+  # specify that the model is a random forest
+  rand_forest() %>%
+  # specify that the `mtry` parameter needs to be tuned
+  set_args(mtry = tune(), trees = tune(), tree.depth = tune(), min.node.size = tune()) %>%
+  # select the engine/package that underlies the model
+  set_engine("ranger", importance = "impurity") %>%
+  # choose either the continuous regression or binary classification mode
+  set_mode("classification") 
+```
+
+```{r}
+# set the workflow
+rf_workflow <- workflow() %>%
+  # add the recipe
+  add_recipe(stroke_recipe) %>%
+  # add the model
+  add_model(rf_model)
+```
+
+```{r}
+# specify which values want to try
+rf_grid <- expand.grid(
+  mtry = c(4,  5,  6),
+  trees = c(300,  350,  400)
+)
+
+# extract results
+rf_tune_results <- rf_workflow %>%
+  tune_grid(resamples = stroke_cv, #CV object
+            grid = rf_grid, # grid of values to try
+            metrics = metric_set(accuracy, roc_auc, yardstick::recall) # metrics we care about
+            )
+```
+
+```{r}
+# print results
+rf_tune_results %>%
+  collect_metrics()
+```
+
+```{r}
+param_final <- rf_tune_results %>% 
+  select_best(metric="recall") # recall was selected because we want less false negatives; Strictly speaking in medical terms we want a model that has a high sensitivity;
+
+param_final
+```
+
+```{r}
+rf_workflow <- rf_workflow %>% 
+  finalize_workflow(param_final)
+```
+
+# Task Three: Evaluate and select prediction models
+
+```{r}
+# Set seed for reproducibility
+set.seed(42)
+
+# Fit the model using the workflow and the split
+rf_fit <- rf_workflow %>%
+  # fit on the training set and evaluate on test set
+  last_fit(stroke_split)
+```
+
+```{r}
+rf_fit
+```
+```{r}
+# performance of the final model
+test_performance <- rf_fit %>% collect_metrics()
+test_performance
+```
+
+```{r}
+# generate predictions from the test set
+test_predictions <- rf_fit %>% collect_predictions()
+test_predictions
+```
+```{r}
+# generate a confusion matrix
+test_predictions %>% 
+  conf_mat(truth = stroke, estimate = .pred_class)
+```
+
+```{r}
+test_predictions %>%
+  ggplot() +
+  geom_density(aes(x = .pred_class, fill = stroke), 
+               alpha = 0.5)
+```
+
+```{r}
+final_model <- fit(rf_workflow, stroke_df)
+```
+
+```{r}
+final_model
+```
+```{r}
+# Variable importance
+
+# Extract the ranger object from the workflow fit
+ranger_obj <- extract_fit_engine(final_model)
+
+# Access the variable importance scores
+var_importance <- importance(ranger_obj)
+
+# Print the variable importance scores
+print(var_importance)
+```
+
+```{r}
+# We can see here that the most important factors from greatest are avg_glucose_level, bmi, age, smoking_status, and work_type;
+```
+
+```{r}
+# plotting variable importance;
+
+# Convert the named vector to a data frame
+var_df <- data.frame(Variable = names(var_importance), Importance = var_importance)
+
+# Create the bar chart
+ggplot(var_df, aes(x = reorder(Variable, -Importance), y = Importance, fill = Importance)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(x = "Variables", y = "Importance", title = "Variable Importance Bar Chart") +
+  theme_minimal() +
+  scale_fill_gradient(low = "red", high = "blue")
+
+```
+
+
+
+# Task Four: Deploy the prediction model
+
+```{r}
+# Save the model to a file in the current working directory
+saveRDS(final_model, "model/model.rds")
+```
+
+```{r}
+# Load your model
+model <- readRDS("model/model.rds")
+
+# Define a prediction function
+predict_fn <- function(input_data) {
+  # Preprocess input_data if necessary
+  # Make prediction using this model
+  prediction <- predict(model, input_data)
+  return(prediction)
+}
+```
+
+
+```{r}
+source("plumber.R")
+
+r <- plumb("plumber.R")
+r$run(port=8000)
+```
+```{r}
+# Deploying to Azure;
+deployaci <- deployresgrp$create_aci("deployaci",
+    image="yourusername/yourimagename",
+    registry_creds=deployreg,
+    cores=2, memory=8,
+    ports=aci_ports(8000))
+
+```
+
+
+
+# Task Five: Findings and Conclusions
+Clear and Well-Supported Conclusions:
+
+1. **Age and Stroke Risk**: The EDA visualizations confirm that age is a critical determinant of stroke risk, with a notable increase in risk post-60 years. This aligns with the Random Forest model's importance of 'age' as a top predictor.
+
+2. **Work Type and Stroke Risk**: The EDA suggests that private jobs may confer a lower stroke risk compared to self-employment, which is reflected in the model's inclusion of 'work_type' as a significant predictor.
+
+3. **Stroke Prevalence by Age Group**: The treemap identifies a peak in stroke prevalence among  40-55-year-olds, which is consistent with the model's consideration of 'age'.
+
+4. **Gender, BMI, and Glucose Levels**: The heatmap indicates that both gender and BMI interact with glucose levels to affect stroke risk, which is supported by the model's recognition of 'bmi', 'avg_glucose_level', and 'smoking_status' as important factors.
+
+5. **Heart Disease and Hypertension**: The EDA's finding of a link between heart disease and stroke risk is corroborated by the model's inclusion of 'age' (which may reflect cardiovascular health) without a significant mention of hypertension.
+
+## Appropriate Recommendations or Next Steps:
+
+1. **Targeted Interventions**: Develop interventions tailored to high-risk groups, such as older adults and those with private jobs, to mitigate stroke risk.
+
+2. **Lifestyle Modifications**: Encourage lifestyle changes, including dietary adjustments and physical activity, especially for individuals with higher BMI and glucose levels.
+
+3. **Policy Changes**: Advocate for policies that improve workplace safety and healthcare access, potentially reducing stroke risk.
+
+4. **Longitudinal Studies**: Conduct longitudinal studies to monitor the progression of risk factors and the effectiveness of interventions over time.
+
+5. **Model Improvement**: Refine the Random Forest model by incorporating additional relevant features and using ensemble methods to enhance prediction accuracy.
+
+## Limitations or Areas for Further Research:
+
+1. **Underlying Mechanisms**: The current analysis relies on correlations and does not explain the causal relationships between risk factors and stroke. Future research should explore causality.
+
+2. **Model Assumptions**: The Random Forest model assumes independence among features, which may not always hold true. Investigating feature interactions could improve predictions.
+
+3. **Data Quality**: The quality and completeness of the dataset used for analysis are critical. Ensuring robust data collection and cleaning practices are essential.
+
+4. **Generalizability**: The model's performance should be evaluated on out-of-sample data to assess its ability to generalize to new, unseen data.
+
+5. **Ethical Considerations**: Any predictive model must consider ethical implications, such as fairness and privacy, when deploying interventions or making policy recommendations.
