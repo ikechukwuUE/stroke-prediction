@@ -42,7 +42,6 @@ library(workflows)
 library(tune)
 library(caret)
 library(ranger)
-library(plumber)
 ```
 
 
@@ -259,7 +258,7 @@ ggplot(var_df, aes(x = reorder(Variable, -Importance), y = Importance, fill = Im
 
 
 
-# Task Four: Deploy the prediction model
+# Task Four: Save the prediction model
 
 ```{r}
 # Save the model to a file in the current working directory
@@ -267,35 +266,8 @@ saveRDS(final_model, "model/model.rds")
 ```
 
 ```{r}
-# Load your model
-model <- readRDS("model/model.rds")
-
-# Define a prediction function
-predict_fn <- function(input_data) {
-  # Preprocess input_data if necessary
-  # Make prediction using this model
-  prediction <- predict(model, input_data)
-  return(prediction)
-}
-```
-
-
-```{r}
-source("plumber.R")
-
-r <- plumb("plumber.R")
-r$run(port=8000)
-```
-```{r}
-# Deploying to Azure;
-deployaci <- deployresgrp$create_aci("deployaci",
-    image="yourusername/yourimagename",
-    registry_creds=deployreg,
-    cores=2, memory=8,
-    ports=aci_ports(8000))
 
 ```
-
 
 
 # Task Five: Findings and Conclusions
