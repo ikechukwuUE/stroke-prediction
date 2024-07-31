@@ -14,11 +14,8 @@ The dataset used for this project consists of various features related to patien
 
 ## Modeling and Evaluation
 
-<<<<<<< HEAD
 A Random Forest ensemble model was developed and evaluated using several metrics, including accuracy, precision, recall, and F1 score. The model achieved exceptional performance, indicating its potential for clinical use.
-=======
-A Random Forest ensemble model was developed and evaluated using several metrics, including accuracy, recall, and auc score. The model achieved exceptional performance, indicating its potential for clinical use.
->>>>>>> 8f9efebd57f9527d5185a34ba5541ca69da2e125
+
 
 ## Feature Importance
 
@@ -26,11 +23,8 @@ The model identified key factors contributing to stroke risk, such as age, work 
 
 ## Conclusion
 
-<<<<<<< HEAD
 The predictive model developed in this project effectively classifies patients at risk of stroke. This model can automate the initial stages of the claims process, thereby increasing response time and improving overall system efficiency. Future steps to expand on this project could include refining the model to handle more complex scenarios or integrating it into a broader content moderation system.
-=======
-The predictive model developed in this project effectively classifies patients at risk of stroke. This model can automate the initial stages of screening patients at high risk of stroke, thereby decreasing overall morbidity and mortality. Future steps to expand on this project could include refining the model to handle more complex scenarios or integrating it into a broader content moderation system.
->>>>>>> 8f9efebd57f9527d5185a34ba5541ca69da2e125
+
 
 To get started with this project, clone the repository and follow the instructions in the `README.md` file.
 
